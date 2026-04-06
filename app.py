@@ -1,118 +1,131 @@
 import streamlit as st
-import queries
-import charts
+import pandas as pd
+import queries, charts
 
-# Configuração da Página
-st.set_page_config(
-    page_title="vendas online", 
-    layout="wide"
-)
+st.set_page_config(page_title="Retail Analytics Pro", layout="wide")
 
-# --- SIDEBAR / FILTROS GLOBAIS ---
-st.sidebar.title("Filtros Globais")
 
-# 1. Filtro de Período (Slider)
-periodo = st.sidebar.slider("Período de Análise (Meses)", 1, 12, 6)
+# --- SIDEBAR / FILTROS ---
+st.sidebar.title("Filtros Estratégicos")
+periodo = st.sidebar.slider("Meses", 1, 6, 6)
 
-# Carregamento de dados para filtros dinâmicos
-df_vendas_base = queries.get_total_sales_by_month(periodo)
-categorias_disponiveis = df_vendas_base['product_category'].unique().tolist()
 
-# 2. Filtro de Categorias (Pills)
-st.sidebar.write("Filtrar por Categoria:")
-selecao_categorias = st.sidebar.pills(
+# Carregamento inicial para pegar os nomes das categorias
+df_init = queries.get_total_sales_by_month(6)
+categorias_disponiveis = df_init['product_category'].unique().tolist()
+
+
+
+selecao_pills = st.sidebar.pills(
     "Categorias", 
     categorias_disponiveis, 
     selection_mode="multi", 
-    default=categorias_disponiveis
+    default=None
 )
 
-# Aplicar filtro de categoria no dataframe de vendas
-df_vendas_filtrado = df_vendas_base[df_vendas_base['product_category'].isin(selecao_categorias)]
 
-# --- LAYOUT DO DASHBOARD ---
-st.title("📊 Dashboard Comercial - Análise de Vendas Online")
+if not selecao_pills:
+    selecao_categorias = categorias_disponiveis
+else:
+    selecao_categorias = selecao_pills
+
+# --- CARREGAMENTO DE DADOS ---
+df_metricas = queries.get_filtered_metrics(periodo, selecao_categorias)
+df_faturamento = queries.get_monthly_revenue_report(periodo, selecao_categorias)
+df_vendas_cat = queries.get_total_sales_by_month(periodo)
+df_vendas_cat = df_vendas_cat[df_vendas_cat['product_category'].isin(selecao_categorias)]
+
+
+
+# --- CÁLCULOS DOS KPIs ---
+# Adicionamos uma verificação de segurança caso o banco retorne vazio
+if not df_metricas.empty and 'status' in df_metricas.columns:
+    vendas_sucesso = df_metricas[df_metricas['status'] == 'Venda Efetivada']
+    receita_total = vendas_sucesso['revenue'].sum()
+    qtd_pedidos = vendas_sucesso['order_count'].sum()
+else:
+    receita_total = 0
+    qtd_pedidos = 0
+
+total_itens = df_vendas_cat['total_quantity_sold'].sum()
+ticket_medio = receita_total / qtd_pedidos if qtd_pedidos > 0 else 0
+itens_por_carrinho = total_itens / qtd_pedidos if qtd_pedidos > 0 else 0
+
+
+
+st.title("📊 BI - Dashboard Comercial de Varejo")
+
+st.write("Dashboard de análise comercial construído a partir da API de dados gratuita: https://fakestoreapi.com/docs")
+st.write("Os dados foram enriquecidos e estruturados para fornecer insights valiosos sobre vendas, clientes e produtos. " \
+"Os dados são fictícios e destinados apenas para fins de demonstração.")
+
+# --- LINHA 1: KPIs (4 COLUNAS) ---
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Valor Total Vendido", f"R$ {receita_total:,.2f}")
+m2.metric("Ticket Médio", f"R$ {ticket_medio:,.2f}")
+m3.metric("Total de Itens", f"{total_itens:,.0f}")
+m4.metric("Média Itens/Carrinho", f"{itens_por_carrinho:.2f}")
+
 st.markdown("---")
 
-# Métricas Rápidas (KPIs)
-col1, col2, col3 = st.columns(3)
-with col1:
-    total_itens = df_vendas_filtrado['total_quantity_sold'].sum()
-    st.metric("Total de Itens Vendidos", f"{total_itens:,}")
-
-with col2:
-    df_ticket = queries.get_monthly_average_ticket()
-    avg_ticket = df_ticket['monthly_avg_ticket'].mean()
-    st.metric("Ticket Médio (Geral)", f"R$ {avg_ticket:.2f}")
-
-with col3:
-    df_status_base = queries.get_purchase_status_percentage()
-    # Filtrando a média de sucesso apenas para os meses no período
-    taxa_sucesso = df_status_base[df_status_base['status'] == 'Completed']['percentage'].mean()
-    st.metric("Taxa de Conversão", f"{taxa_sucesso:.1f}%")
-
-st.markdown("---")
-
-# Linha 1: Séries Temporais e Heatmap
-c1, c2 = st.columns([2, 1])
-
+# --- LINHA 2: FINANCEIRO E STATUS (2 COLUNAS) ---
+c1, c2 = st.columns(2)
 with c1:
-    st.subheader("Evolução de Vendas por Categoria")
-    fig_vendas = charts.plot_line_chart(
-        df_vendas_filtrado, 'month', 'total_quantity_sold', 'product_category',
-        "Mês da Venda", "Qtd Vendida", "Volume de Vendas Mensal"
-    )
-    # Atualizado para a nova sintaxe de 2026
-    st.altair_chart(fig_vendas, width="stretch")
-
+    st.subheader("Valor Vendido por Mês")
+    if not df_faturamento.empty:
+        st.altair_chart(charts.plot_line_chart(df_faturamento, 'month', 'total_revenue', None, "Mês", "Receita", "Evolução Financeira"), width="stretch")
 with c2:
-    st.subheader("Tabela de Performance")
-    # Tabela com Mapa de Calor (Estilização Pandas)
+    st.subheader("Status dos Carrinhos")
+    if not df_metricas.empty:
+        st.altair_chart(charts.plot_donut_chart(df_metricas, 'order_count', 'status', "Conversão de Vendas"), width="stretch")
+
+st.markdown("---")
+
+# --- LINHA 3: CATEGORIAS E PERFORMANCE (2 COLUNAS) ---
+c3, c4 = st.columns(2)
+with c3:
+    st.subheader("Qtd de Vendas por Categoria")
+    st.altair_chart(charts.plot_line_chart(df_vendas_cat, 'month', 'total_quantity_sold', 'product_category', "Mês", "Qtd", "Volume por Categoria"), width="stretch")
+with c4:
+    st.subheader("Performance de Produtos")
+    df_perf = queries.get_product_performance_table(periodo, selecao_categorias)
+    
+    # Ordenando pelo 'Valor Vendido' do maior para o menor
+    df_perf_sorted = df_perf.sort_values(by='Valor Vendido', ascending=False)
+    
+    # Exibindo com o gradiente aplicado ao DF ordenado
     st.dataframe(
-        df_vendas_filtrado.style.background_gradient(cmap='Greens', subset=['total_quantity_sold']),
+        df_perf_sorted.style.background_gradient(cmap='Blues', subset=['Valor Vendido']), 
         width="stretch"
     )
 
 st.markdown("---")
 
-# Linha 2: Maiores Clientes e Mapa Logístico
-c3, c4 = st.columns(2)
-
-with c3:
-    st.subheader("Top 10 Clientes (Maior Ticket)")
-    df_clientes = queries.get_customer_average_sales().head(10)
-    fig_clientes = charts.plot_bar_chart(
-        df_clientes, 'average_ticket', 'user_name',
-        "Ticket Médio (R$)", "Cliente", "Maiores Gastadores"
-    )
-    st.altair_chart(fig_clientes, width="stretch")
-
-with c4:
-    st.subheader("📍 Localização de Clientes (Logística)")
+# --- LINHA 4: CLIENTES E MAPA (2 COLUNAS) ---
+c5, c6 = st.columns(2)
+with c5:
+    st.subheader("Top 10 Clientes (Ticket Médio)")
+    df_clientes = queries.get_customer_average_sales(periodo, selecao_categorias).head(10)
+    st.altair_chart(charts.plot_bar_chart(df_clientes, 'average_ticket', 'user_name', "Ticket (R$)", "Cliente", "Maiores Gastadores"), width="stretch")
+with c6:
+    st.subheader("📍 Mapa Logístico")
     df_mapa = queries.get_user_locations()
-    
-    # Camada de segurança para garantir que lat/lon sejam float64 (evita erro de JSON)
     df_mapa['latitude'] = df_mapa['latitude'].astype(float)
     df_mapa['longitude'] = df_mapa['longitude'].astype(float)
-    
-    # O Streamlit utiliza DeckGL internamente para o st.map
-    st.map(df_mapa, latitude='latitude', longitude='longitude', size=20, color='#ff4b4b')
-    st.caption("Insight: Concentração geográfica para expansão de galpões logísticos.")
+    st.map(df_mapa, latitude='latitude', longitude='longitude', size=20)
 
-# Linha 3: Qualidade e Status
-st.markdown("---")
-c5, c6 = st.columns(2)
-
-with c5:
-    st.subheader("Categorias Mais Bem Avaliadas")
-    df_cat = queries.get_best_rated_categories()
-    st.dataframe(df_cat, width="stretch")
-
-with c6:
-    st.subheader("Status de Compra por Mês (%)")
-    df_status = queries.get_purchase_status_percentage()
-    fig_status = charts.plot_line_chart(
-        df_status, 'month', 'percentage', 'status',
-        "Mês", "Porcentagem (%)", "Completed vs Cancelled"
+    st.write("**Observação:** O mapa acima é uma representação fictícia baseada em dados de localização " \
+    "gerados aleatoriamente para os usuários. Ele serve apenas para fins ilustrativos e não reflete " \
+    "localizações reais dos clientes."
     )
-    st.altair_chart(fig_status, width="stretch")
+
+st.markdown("---")
+
+# --- LINHA 5: PADRÃO E QUALIDADE (2 COLUNAS) ---
+c7, c8 = st.columns(2)
+with c7:
+    st.subheader("Padrão de Consumo")
+    st.dataframe(queries.get_user_consumption_pattern(periodo, selecao_categorias), width="stretch")
+with c8:
+    st.subheader("Categorias Mais Bem Avaliadas")
+    st.table(queries.get_best_rated_categories())
