@@ -1,20 +1,21 @@
 import streamlit as st
-import pandas as pd
 import queries, charts
 
-st.set_page_config(page_title="Retail Analytics Pro", layout="wide")
-
+st.set_page_config(page_title="Análises Varejo", layout="wide")
 
 # --- SIDEBAR / FILTROS ---
+st.sidebar.title("🎯 Navegação")
+# Botão para ir para a página de metodologia
+if st.sidebar.button("📖 Ver Metodologia", use_container_width=True):
+    st.switch_page("pages/metodologia.py")
+
+st.sidebar.markdown("---")
 st.sidebar.title("Filtros Estratégicos")
 periodo = st.sidebar.slider("Meses", 1, 6, 6)
-
 
 # Carregamento inicial para pegar os nomes das categorias
 df_init = queries.get_total_sales_by_month(6)
 categorias_disponiveis = df_init['product_category'].unique().tolist()
-
-
 
 selecao_pills = st.sidebar.pills(
     "Categorias", 
@@ -22,7 +23,6 @@ selecao_pills = st.sidebar.pills(
     selection_mode="multi", 
     default=None
 )
-
 
 if not selecao_pills:
     selecao_categorias = categorias_disponiveis
@@ -35,10 +35,7 @@ df_faturamento = queries.get_monthly_revenue_report(periodo, selecao_categorias)
 df_vendas_cat = queries.get_total_sales_by_month(periodo)
 df_vendas_cat = df_vendas_cat[df_vendas_cat['product_category'].isin(selecao_categorias)]
 
-
-
 # --- CÁLCULOS DOS KPIs ---
-# Adicionamos uma verificação de segurança caso o banco retorne vazio
 if not df_metricas.empty and 'status' in df_metricas.columns:
     vendas_sucesso = df_metricas[df_metricas['status'] == 'Venda Efetivada']
     receita_total = vendas_sucesso['revenue'].sum()
@@ -50,8 +47,6 @@ else:
 total_itens = df_vendas_cat['total_quantity_sold'].sum()
 ticket_medio = receita_total / qtd_pedidos if qtd_pedidos > 0 else 0
 itens_por_carrinho = total_itens / qtd_pedidos if qtd_pedidos > 0 else 0
-
-
 
 st.title("📊 BI - Dashboard Comercial de Varejo")
 
@@ -90,10 +85,8 @@ with c4:
     st.subheader("Performance de Produtos")
     df_perf = queries.get_product_performance_table(periodo, selecao_categorias)
     
-    # Ordenando pelo 'Valor Vendido' do maior para o menor
     df_perf_sorted = df_perf.sort_values(by='Valor Vendido', ascending=False)
     
-    # Exibindo com o gradiente aplicado ao DF ordenado
     st.dataframe(
         df_perf_sorted.style.background_gradient(cmap='Blues', subset=['Valor Vendido']), 
         width="stretch"
