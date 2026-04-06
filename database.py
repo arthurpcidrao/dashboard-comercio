@@ -26,7 +26,6 @@ class LocalDatabase:
         with self._get_connection() as con:
             for table_name, file_path in files.items():
                 if os.path.exists(file_path):
-                    # Criamos views para que o SQL aceite nomes simples como 'FROM products'
                     con.execute(f"CREATE OR REPLACE VIEW {table_name} AS SELECT * FROM '{file_path}'")
             print("[DB] Views mapeadas com sucesso para os arquivos Parquet.")
 
@@ -37,24 +36,11 @@ class LocalDatabase:
         """
         try:
             with self._get_connection() as con:
-                # O DuckDB permite converter o resultado direto para DataFrame (.df())
                 df = con.execute(sql_query).df()
                 return df
         except Exception as e:
             print(f"[DB Error] Falha ao executar query: {e}")
-            return pd.DataFrame() # Retorna DF vazio em caso de erro
+            return pd.DataFrame()
 
-# Exemplo de uso isolado para teste:
-if __name__ == "__main__":
-    db = LocalDatabase()
-    
-    # Exemplo de consulta que você poderá usar no queries.py
-    query_exemplo = """
-        SELECT 
-            * 
-        FROM carts
-    """
-    df = db.execute_query(query_exemplo)
-    print(df)
 
     
